@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Temperature Change: A Data Story</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-annotation/2.5.1/d3-annotation.min.js"></script>
+    <script>
+        // 检查D3是否加载成功
+        if (typeof d3 === 'undefined') {
+            console.error('D3.js failed to load from primary CDN, trying alternative...');
+            document.write('<script src="https://cdn.jsdelivr.net/npm/d3@7.8.5/dist/d3.min.js"><\/script>');
+        }
+    </script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .navigation {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .nav-button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+        .nav-button:hover {
+            background-color: #45a049;
+        }
+        .nav-button.active {
+            background-color: #2196F3;
+        }
+        #chart {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-top: 20px;
+            min-height: 800px;
+        }
+        .axis {
+            font-size: 12px;
+        }
+        .axis-label {
+            font-size: 14px;
+            font-weight: bold;
+        }
+        .line {
+            fill: none;
+            stroke-width: 2;
+        }
+        .annotation-note-title {
+            font-weight: bold;
+            font-size: 13px;
+        }
+        .annotation-note-label {
+            font-size: 11px;
+            opacity: 0.8;
+        }
+        .annotation-connector {
+            stroke: #bbb;
+            stroke-width: 1;
+            opacity: 0.4;
+        }
+        .annotation path.connector-arrow {
+            fill: #bbb;
+            opacity: 0.4;
+        }
+        .annotation-note-line {
+            display: none;
+        }
+        .annotation-note-bg {
+            fill: white;
+            fill-opacity: 0.85;
+            rx: 5;
+            ry: 5;
+        }
+        .tooltip {
+            position: absolute;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            border-radius: 4px;
+            pointer-events: none;
+            font-size: 12px;
+        }
+        .region-button {
+            background-color: #FF9800;
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            margin: 5px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .region-button:hover {
+            background-color: #F57C00;
+        }
+        .region-button.selected {
+            background-color: #E65100;
+        }
+        .description {
+            text-align: center;
+            color: #666;
+            margin: 20px 0;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>The Rising Heat: A Story of Global Temperature Change</h1>
+        
+        <p class="description" id="scene-description">
+            Explore how global temperatures have changed over the past century and what this means for our planet.
+        </p>
+        
+        <div class="navigation">
+            <button class="nav-button active" onclick="showScene(1)">Global Overview</button>
+            <button class="nav-button" onclick="showScene(2)">Regional Breakdown</button>
+            <button class="nav-button" onclick="showScene(3)">Future Projections</button>
+        </div>
+        
+        <div id="chart"></div>
+    </div>
+
+    <script>
+        // 全局变量和函数声明
+        let currentScene = 1;
+        let globalData = [];
+        let selectedRegion = 'global';
+        let svg, g, xScale, yScale, line, xAxisGroup, yAxisGroup;
+        const margin = {top: 200, right: 80, bottom: 60, left: 70};
+        const width = 1150 - margin.left - margin.right;
+        const height = 800 - margin.top - margin.bottom;
+        
+        // Generate sample data
+        function generateData() {
+            const years = d3.range(1880, 2024);
+            
+            // Global data with realistic trend
+            globalData = years.map(year => {
+                const trend = (year - 1880) * 0.01;
+                const noise = (Math.random() - 0.5) * 0.3;
+                const acceleration = year > 1980 ? (year - 1980) * 0.015 : 0;
+                return {
+                    year: year,
+                    temperature: -0.2 + trend + noise + acceleration,
+                    global: -0.2 + trend + noise + acceleration,
+                    arctic: -0.3 + trend * 2 + noise * 1.5 + acceleration * 2,
+                    tropical: -0.1 + trend * 0.8 + noise * 0.8 + acceleration * 0.8,
+                    temperate: -0.2 + trend + noise + acceleration,
+                    future_low: year > 2023 ? -0.2 + trend + acceleration + 0.5 : null,
+                    future_high: year > 2023 ? -0.2 + trend + acceleration + 2.5 : null
+                };
+            });
+            
+            // Add future projections
+            for (let year = 2024; year <= 2100; year++) {
+                const trend = (year - 1880) * 0.01;
+                const acceleration = (year - 1980) * 0.015;
+                globalData.push({
+                    year: year,
+                    temperature: null,
+                    global: null,
+                    arctic: null,
+                    tropical: null,
+                    temperate: null,
+                    future_low: -0.2 + trend + acceleration + (year - 2023) * 0.01,
+                    future_high: -0.2 + trend + acceleration + (year - 2023) * 0.03
+                });
+            }
+        }
+        
+        // Scene 1: Global Overview
+        function drawScene1() {
+            // Clear previous content
+            g.selectAll(".line").remove();
+            g.selectAll(".annotation-group").remove();
+            g.selectAll(".dot").remove();
+            d3.selectAll(".tooltip").remove();
+            // 清除区域控制按钮（如果存在）
+            d3.selectAll(".region-controls").remove();
+            
+            // Update description
+            d3.select("#scene-description")
+                .text("Global average temperature anomalies from 1880 to 2023, showing the accelerating warming trend.");
+            
+            // Filter data for historical period
+            const historicalData = globalData.filter(d => d.year <= 2023);
+            
+            // Update scales
+            xScale.domain([1880, 2023]);
+            yScale.domain(d3.extent(historicalData, d => d.temperature));
+            
+            // Update axes
+            xAxisGroup.call(d3.axisBottom(xScale).tickFormat(d3.format("d")));
+            yAxisGroup.call(d3.axisLeft(yScale));
+            
+            // Draw line
+            g.append("path")
+                .datum(historicalData)
+                .attr("class", "line")
+                .attr("d", line)
+                .style("stroke", "#ff4444")
+                .style("opacity", 0)
+                .transition()
+                .duration(1000)
+                .style("opacity", 1);
+            
+            // Add annotations
+            const annotations = [
+                {
+                    note: {
+                        title: "Pre-industrial baseline",
+                        label: "Temperature anomalies measured relative to 1951-1980 average"
+                    },
+                    x: xScale(1910),
+                    y: yScale(0),
+                    dy: -90,
+                    dx: 50
+                },
+                {
+                    note: {
+                        title: "Rapid warming begins",
+                        label: "Temperature rise accelerates after 1980"
+                    },
+                    x: xScale(1980),
+                    y: yScale(0.8),
+                    dy: -200,
+                    dx: 20
+                },
+                {
+                    note: {
+                        title: "Record warmth",
+                        label: "Recent years show unprecedented warming"
+                    },
+                    x: xScale(2008),
+                    y: yScale(1.45),
+                    dy: -90,
+                    dx: 0
+                }
+            ];
+            
+            const makeAnnotations = d3.annotation()
+                .annotations(annotations);
+                
+            g.append("g")
+                .attr("class", "annotation-group")
+                .style("opacity", 0)
+                .call(makeAnnotations)
+                .transition()
+                .delay(1000)
+                .duration(500)
+                .style("opacity", 1);
+                
+            // Add interactive tooltip
+            const tooltip = d3.select("body").append("div")
+                .attr("class", "tooltip")
+                .style("opacity", 0);
+                
+            g.selectAll(".dot")
+                .data(historicalData.filter((d, i) => i % 5 === 0))
+                .enter().append("circle")
+                .attr("class", "dot")
+                .attr("cx", d => xScale(d.year))
+                .attr("cy", d => yScale(d.temperature))
+                .attr("r", 3)
+                .style("fill", "#ff4444")
+                .style("opacity", 0)
+                .on("mouseover", function(event, d) {
+                    tooltip.transition()
+                        .duration(200)
+                        .style("opacity", .9);
+                    tooltip.html(`Year: ${d.year}<br/>Anomaly: ${d.temperature.toFixed(2)}°C`)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", function(d) {
+                    tooltip.transition()
+                        .duration(500)
+                        .style("opacity", 0);
+                })
+                .transition()
+                .delay(1000)
+                .duration(500)
+                .style("opacity", 1);
+        }
+        
+        // Scene 2: Regional Breakdown
+        function drawScene2() {
+            // Clear previous content
+            g.selectAll(".line").remove();
+            g.selectAll(".annotation-group").remove();
+            g.selectAll(".dot").remove();
+            d3.selectAll(".tooltip").remove();
+            // 重要：清除之前的区域控制按钮
+            d3.selectAll(".region-controls").remove();
+            
+            // Update description
+            d3.select("#scene-description")
+                .text("Explore temperature changes by region. Arctic regions are warming faster than the global average.");
+            
+            // Add region controls
+            const controls = d3.select("#chart")
+                .insert("div", "svg")
+                .attr("class", "region-controls")
+                .style("text-align", "center")
+                .style("margin-bottom", "20px");
+                
+            const regions = [
+                {id: 'global', name: 'Global Average', color: '#ff4444'},
+                {id: 'arctic', name: 'Arctic', color: '#0066cc'},
+                {id: 'tropical', name: 'Tropical', color: '#00aa44'},
+                {id: 'temperate', name: 'Temperate', color: '#ff9900'}
+            ];
+            
+            controls.selectAll("button")
+                .data(regions)
+                .enter()
+                .append("button")
+                .attr("class", d => `region-button ${d.id === selectedRegion ? 'selected' : ''}`)
+                .text(d => d.name)
+                .on("click", function(event, d) {
+                    selectedRegion = d.id;
+                    d3.selectAll(".region-button").classed("selected", false);
+                    d3.select(this).classed("selected", true);
+                    updateRegionalChart();
+                });
+            
+            updateRegionalChart();
+        }
+        
+        function updateRegionalChart() {
+            const historicalData = globalData.filter(d => d.year <= 2023);
+            
+            // Update scales
+            xScale.domain([1880, 2023]);
+            const selectedData = historicalData.map(d => ({
+                year: d.year,
+                temperature: d[selectedRegion]
+            }));
+            yScale.domain(d3.extent(selectedData, d => d.temperature));
+            
+            // Update axes
+            xAxisGroup.call(d3.axisBottom(xScale).tickFormat(d3.format("d")));
+            yAxisGroup.call(d3.axisLeft(yScale));
+            
+            // Remove old line
+            g.selectAll(".line").remove();
+            
+            // Draw new line
+            const regionColors = {
+                global: '#ff4444',
+                arctic: '#0066cc',
+                tropical: '#00aa44',
+                temperate: '#ff9900'
+            };
+            
+            g.append("path")
+                .datum(selectedData)
+                .attr("class", "line")
+                .attr("d", line)
+                .style("stroke", regionColors[selectedRegion])
+                .style("opacity", 0)
+                .transition()
+                .duration(1000)
+                .style("opacity", 1);
+                
+            // Add region-specific annotation
+            g.selectAll(".annotation-group").remove();
+            
+            let annotation;
+            if (selectedRegion === 'arctic') {
+                annotation = [{
+                    note: {
+                        title: "Arctic Amplification",
+                        label: "Arctic warms 2-3x faster than global average"
+                    },
+                    x: xScale(2000),
+                    y: yScale(2.5),
+                    dy: -160,
+                    dx: 40
+                }];
+            } else if (selectedRegion === 'tropical') {
+                annotation = [{
+                    note: {
+                        title: "Tropical Stability",
+                        label: "Tropical regions show less variation but steady warming"
+                    },
+                    x: xScale(2000),
+                    y: yScale(1.1),
+                    dy: -100,
+                    dx: 40
+                }];
+            }
+            
+            if (annotation) {
+                const makeAnnotations = d3.annotation()
+                    .annotations(annotation);
+                    
+                g.append("g")
+                    .attr("class", "annotation-group")
+                    .call(makeAnnotations);
+            }
+        }
+        
+        // Scene 3: Future Projections
+        function drawScene3() {
+            // Clear previous content
+            g.selectAll(".line").remove();
+            g.selectAll(".annotation-group").remove();
+            g.selectAll(".dot").remove();
+            d3.selectAll(".tooltip").remove();
+            // 清除区域控制按钮（如果存在）
+            d3.selectAll(".region-controls").remove();
+            
+            // Update description
+            d3.select("#scene-description")
+                .text("Future temperature projections under different emission scenarios through 2100.");
+            
+            // Update scales for extended timeline
+            xScale.domain([1880, 2100]);
+            yScale.domain([-1, 5]);
+            
+            // Update axes
+            xAxisGroup.call(d3.axisBottom(xScale).tickFormat(d3.format("d")));
+            yAxisGroup.call(d3.axisLeft(yScale));
+            
+            // Draw historical line
+            const historicalData = globalData.filter(d => d.year <= 2023);
+            g.append("path")
+                .datum(historicalData)
+                .attr("class", "line historical")
+                .attr("d", line)
+                .style("stroke", "#666")
+                .style("stroke-width", 2);
+            
+            // Draw future projections
+            const futureData = globalData.filter(d => d.year >= 2023);
+            
+            // Low emissions scenario
+            const lowLine = d3.line()
+                .x(d => xScale(d.year))
+                .y(d => yScale(d.future_low))
+                .defined(d => d.future_low !== null);
+                
+            g.append("path")
+                .datum(futureData)
+                .attr("class", "line future-low")
+                .attr("d", lowLine)
+                .style("stroke", "#00aa44")
+                .style("stroke-dasharray", "5,5")
+                .style("opacity", 0)
+                .transition()
+                .delay(500)
+                .duration(1000)
+                .style("opacity", 1);
+            
+            // High emissions scenario
+            const highLine = d3.line()
+                .x(d => xScale(d.year))
+                .y(d => yScale(d.future_high))
+                .defined(d => d.future_high !== null);
+                
+            g.append("path")
+                .datum(futureData)
+                .attr("class", "line future-high")
+                .attr("d", highLine)
+                .style("stroke", "#ff4444")
+                .style("stroke-dasharray", "5,5")
+                .style("opacity", 0)
+                .transition()
+                .delay(500)
+                .duration(1000)
+                .style("opacity", 1);
+            
+            // Add annotations
+            const annotations = [
+                {
+                    note: {
+                        title: "Present Day",
+                        label: "Current warming: ~1.2°C above pre-industrial"
+                    },
+                    x: xScale(2016),
+                    y: yScale(1.8),
+                    dy: -170,
+                    dx: -50
+                },
+                {
+                    note: {
+                        title: "Low Emissions Path",
+                        label: "Limiting warming to 1.5-2°C requires immediate action"
+                    },
+                    x: xScale(2070),
+                    y: yScale(3.4),
+                    dy: 60,
+                    dx: -10
+                },
+                {
+                    note: {
+                        title: "High Emissions Path",
+                        label: "Business as usual leads to 3-4°C warming"
+                    },
+                    x: xScale(2060),
+                    y: yScale(4.0),
+                    dy: -180,
+                    dx: -50
+                }
+            ];
+            
+            const makeAnnotations = d3.annotation()
+                .annotations(annotations);
+                
+            g.append("g")
+                .attr("class", "annotation-group")
+                .style("opacity", 0)
+                .call(makeAnnotations)
+                .transition()
+                .delay(1500)
+                .duration(500)
+                .style("opacity", 1);
+        }
+        
+        // Scene navigation
+        function showScene(scene) {
+            currentScene = scene;
+            
+            // Update button states
+            d3.selectAll(".nav-button").classed("active", false);
+            d3.selectAll(".nav-button").filter((d, i) => i === scene - 1).classed("active", true);
+            
+            // Draw appropriate scene
+            switch(scene) {
+                case 1:
+                    drawScene1();
+                    break;
+                case 2:
+                    drawScene2();
+                    break;
+                case 3:
+                    drawScene3();
+                    break;
+            }
+        }
+        
+        // 初始化函数
+        function initialize() {
+            // Create SVG
+            svg = d3.select("#chart")
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom);
+                
+            g = svg.append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+            
+            // Create scales
+            xScale = d3.scaleLinear().range([0, width]);
+            yScale = d3.scaleLinear().range([height, 0]);
+            
+            // Create line generator
+            line = d3.line()
+                .x(d => xScale(d.year))
+                .y(d => yScale(d.temperature));
+            
+            // Create axes groups
+            xAxisGroup = g.append("g")
+                .attr("class", "axis x-axis")
+                .attr("transform", `translate(0,${height})`);
+                
+            yAxisGroup = g.append("g")
+                .attr("class", "axis y-axis");
+            
+            // Add axis labels
+            g.append("text")
+                .attr("class", "axis-label")
+                .attr("transform", "rotate(-90)")
+                .attr("y", 0 - margin.left)
+                .attr("x", 0 - (height / 2))
+                .attr("dy", "1em")
+                .style("text-anchor", "middle")
+                .text("Temperature Anomaly (°C)");
+                
+            g.append("text")
+                .attr("class", "axis-label")
+                .attr("transform", `translate(${width/2}, ${height + margin.bottom})`)
+                .style("text-anchor", "middle")
+                .text("Year");
+            
+            // Generate data and show first scene
+            generateData();
+            showScene(1);
+        }
+        
+        // 等待DOM加载完成后初始化
+        window.addEventListener('DOMContentLoaded', function() {
+            if (typeof d3 === 'undefined') {
+                document.getElementById('chart').innerHTML = '<p style="color: red; padding: 20px;">Error: D3.js library failed to load. Please check your internet connection or try using a local server.</p>';
+                return;
+            }
+            initialize();
+        });
+    </script>
+</body>
+</html>
